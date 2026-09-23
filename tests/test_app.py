@@ -112,6 +112,45 @@ class AppTests(unittest.TestCase):
         self.assertEqual(restarted.post('/api/unlock', json={'password': '000001'}).status_code, 200)
         self.assertEqual(restarted.post('/api/unlock', json={'password': '123456'}).status_code, 401)
 
+    def test_optional_amount_legacy_edit_and_clear(self):
+        self.add()
+        old = self.unlock()
+        self.assertNotIn('amount', old['coupon'])
+        ident = old['coupon']['id']
+        fields = dict(type='edited', couponId=ident, number='001234', password='000456')
+        self.assertEqual(self.change(**fields, amount='088').status_code, 200)
+        self.assertEqual(self.unlock()['coupon']['amount'], '88')
+        self.assertEqual(self.change(**fields).status_code, 200)
+        self.assertEqual(self.unlock()['coupon']['amount'], '88')
+        self.assertEqual(self.client.post('/api/use', json={'operationId': str(uuid.uuid4())}, headers={'Authorization': 'Bearer ' + old['token']}).status_code, 409)
+        self.assertEqual(self.change(**fields, amount='').status_code, 200)
+        self.assertNotIn('amount', self.unlock()['coupon'])
+
+    def test_mixed_batch_amount_and_atomic_validation(self):
+        rows = [{'number': '001', 'password': '002'}, {'number': '003', 'password': '004', 'amount': '0'}, {'number': '005', 'password': '006', 'amount': '100'}]
+        self.assertEqual(self.change(type='added', rows=rows).status_code, 200)
+        coupons = json.loads(self.path.read_text())['coupons']
+        self.assertNotIn('amount', coupons[0])
+        self.assertEqual(coupons[1]['amount'], '0')
+        self.assertEqual(coupons[2]['amount'], '100')
+        before = self.path.read_bytes()
+        for amount in ['1.0', '1.50', '-1', '1.234', 'NaN', '1e3', '1000000000', 12.5, True]:
+            result = self.change(type='added', rows=[{'number': 'new1', 'password': '00'}, {'number': 'new2', 'password': '00', 'amount': amount}])
+            self.assertEqual(result.status_code, 400)
+            self.assertEqual(self.path.read_bytes(), before)
+
+    def test_legacy_whole_amount_normalized_without_rounding(self):
+        self.add()
+        data = json.loads(self.path.read_text())
+        data['coupons'][0]['amount'] = '100.00'
+        self.path.write_text(json.dumps(data))
+        self.assertEqual(self.unlock()['coupon']['amount'], '100')
+        data['coupons'][0]['amount'] = '100.50'
+        self.path.write_text(json.dumps(data))
+        before = self.path.read_bytes()
+        self.assertEqual(self.client.post('/api/unlock', json={'password':'123456'}).status_code, 503)
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_rate_limit(self):
         for _ in range(10):
             self.client.post('/api/unlock', json={'password': 'wrong'})

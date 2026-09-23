@@ -1,0 +1,13 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH});const page=await browser.newPage({viewport:{width:390,height:844}});const base=process.env.TEST_BASE_URL||'http://127.0.0.1:8081';const errors=[];page.on('pageerror',e=>errors.push(e.message));
+async function admin(){await page.goto(base+'/?view=admin');await page.locator('#password').fill('admin');await page.locator('#login button').click();await page.locator('#single').waitFor();}
+async function saved(){await page.getByText('已保存。',{exact:true}).waitFor();}
+async function unlock(){await page.goto(base);for(const d of '123456')await page.locator('[data-digit="'+d+'"]').click();await page.locator('#hold').waitFor();}
+try{await admin();await page.locator('#batch').fill('001 002\n003 004 88\n005 006 0');await page.locator('#preview').click();assert((await page.locator('#preview-result').textContent()).includes('88'));await page.locator('#import').click();await saved();assert.equal(await page.locator('.row').count(),3);
+await page.locator('#batch').fill('007 008 1.50');await page.locator('#preview').click();assert.equal(await page.locator('#import').isVisible(),false);
+await page.locator('[data-edit]').first().click();assert.equal(await page.locator('#edit-amount').inputValue(),'');await page.locator('#edit-amount').fill('100');await page.getByRole('button',{name:'保存修改',exact:true}).click();await saved();await unlock();assert.equal(await page.locator('.coupon-amount').textContent(),'金额：¥100');
+for(const width of [320,375,390,430,440]){await page.setViewportSize({width,height:width===320?568:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const b=await page.locator('#hold').boundingBox();assert(b.y+b.height<=(width===320?568:844));}
+await admin();await page.locator('[data-edit]').first().click();assert.equal(await page.locator('#edit-amount').inputValue(),'100');await page.locator('#edit-amount').fill('');await page.getByRole('button',{name:'保存修改',exact:true}).click();await saved();await unlock();assert.equal(await page.locator('.coupon-amount').count(),0);
+await admin();await page.locator('#number').fill('009');await page.locator('#secret').fill('010');await page.locator('#amount').fill('25');await page.locator('#single button').click();await saved();assert((await page.locator('.row').last().textContent()).includes('25'));assert.deepEqual(errors,[]);console.log('Amount browser checks passed: mixed batch, invalid preview, legacy edit, clear, single add, mobile layouts.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

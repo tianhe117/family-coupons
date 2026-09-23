@@ -30,6 +30,16 @@ def text(value, maximum=500):
     return isinstance(value, str) and 0 < len(value.strip()) <= maximum
 
 
+def amount_value(value, legacy=False):
+    """Optional yuan amount stored as an integer string."""
+    if value is None or value == '':
+        return None
+    pattern = r'[0-9]{1,9}(?:\.0{1,2})?' if legacy else r'[0-9]{1,9}'
+    if not isinstance(value, str) or not re.fullmatch(pattern, value.strip()):
+        raise Problem('金额须为非负整数，最多9位，不支持小数。')
+    return str(int(value.strip().split('.')[0]))
+
+
 def valid_date(value):
     try:
         return isinstance(value, str) and value.endswith('Z') and datetime.fromisoformat(value.replace('Z', '+00:00')) is not None
@@ -48,6 +58,11 @@ def validate(data):
             assert c['id'] not in ids and c['number'] not in numbers
             assert valid_date(c['createdAt']) and c['status'] in ('unused', 'used')
             assert c['usedAt'] is None if c['status'] == 'unused' else valid_date(c['usedAt'])
+            if 'amount' in c:
+                try:
+                    c['amount'] = amount_value(c['amount'], legacy=True)
+                except Problem:
+                    raise AssertionError from None
             ids.add(c['id'])
             numbers.add(c['number'])
         for e in data['events']:
@@ -205,7 +220,7 @@ def create_app(config=None):
                 if grants[token]['expires'] < stamp:
                     del grants[token]
             token = secrets.token_urlsafe(32)
-            grants[token] = {'couponId': current['id'], 'number': current['number'], 'password': current['password'], 'expires': stamp + 600, 'operationId': None}
+            grants[token] = {'couponId': current['id'], 'number': current['number'], 'password': current['password'], 'amount': current.get('amount'), 'expires': stamp + 600, 'operationId': None}
             return jsonify(coupon=current, remaining=remaining(d), token=token)
 
     @app.post('/api/use')
@@ -225,7 +240,7 @@ def create_app(config=None):
                     raise Problem('操作编号冲突。', 409)
                 return jsonify(saved=True, remaining=remaining(d))
             c = next((c for c in d['coupons'] if c['id'] == grant['couponId']), None)
-            if not c or c['status'] != 'unused' or c['number'] != grant['number'] or c['password'] != grant['password']:
+            if not c or c['status'] != 'unused' or c['number'] != grant['number'] or c['password'] != grant['password'] or c.get('amount') != grant['amount']:
                 raise Problem('这张券已使用或已修改，请重新输入密码。', 409)
             c['status'], c['usedAt'] = 'used', now()
             record(d, ident, 'used', c['id'])
@@ -286,6 +301,9 @@ def create_app(config=None):
                         raise Problem('存在重复卡号，请修正后整体提交。')
                     seen.add(number)
                     d['coupons'].append({'id': str(uuid.uuid4()), 'number': number, 'password': password, 'status': 'unused', 'createdAt': now(), 'usedAt': None})
+                    amount = amount_value(row.get('amount'))
+                    if amount is not None:
+                        d['coupons'][-1]['amount'] = amount
             elif kind in ('edited', 'restored'):
                 coupon_id = b.get('couponId')
                 c = next((c for c in d['coupons'] if c['id'] == coupon_id), None)
@@ -304,6 +322,13 @@ def create_app(config=None):
                     if any(x['id'] != c['id'] and x['number'] == number for x in d['coupons']):
                         raise Problem('卡号重复。')
                     c['number'], c['password'] = number, b['password'].strip()
+                    # Old clients omitting amount must preserve an existing value.
+                    if 'amount' in b:
+                        amount = amount_value(b['amount'])
+                        if amount is None:
+                            c.pop('amount', None)
+                        else:
+                            c['amount'] = amount
             elif kind == 'password_changed':
                 role, password = b.get('role'), b.get('password')
                 if role not in ('access', 'admin') or not text(password, 128):
