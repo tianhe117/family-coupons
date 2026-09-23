@@ -5,3 +5,7 @@ data/
 __pycache__/
 .pytest_cache/
 test-results/
+
+# Server-specific Compose settings
+compose.override.yaml
+compose.override.yml
