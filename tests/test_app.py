@@ -13,9 +13,9 @@ class AppTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / 'data.json'
-        self.app = create_app({'TESTING': True, 'DATA_FILE': str(self.path), 'INITIAL_ACCESS_PASSWORD': '0012', 'INITIAL_ADMIN_PASSWORD': 'admin-test-123', 'COOKIE_SECURE': False})
+        self.app = create_app({'TESTING': True, 'DATA_FILE': str(self.path), 'COOKIE_SECURE': False})
         self.client = self.app.test_client()
-        result = self.client.post('/api/admin/login', json={'password': 'admin-test-123'})
+        result = self.client.post('/api/admin/login', json={'password': 'admin'})
         self.headers = {'X-CSRF-Token': result.json['csrf']}
 
     def tearDown(self):
@@ -28,7 +28,7 @@ class AppTests(unittest.TestCase):
         return self.change(type='added', rows=[{'number': number, 'password': password}])
 
     def unlock(self):
-        return self.client.post('/api/unlock', json={'password': '0012'}).json
+        return self.client.post('/api/unlock', json={'password': '123456'}).json
 
     def test_auth_and_csrf(self):
         self.add('private-number-00042')
@@ -55,7 +55,7 @@ class AppTests(unittest.TestCase):
             self.assertEqual(result.json['remaining'], 1)
         self.assertEqual(self.client.post('/api/use', json={'operationId': str(uuid.uuid4())}, headers=headers).status_code, 409)
         self.assertEqual(len(json.loads(self.path.read_text())['events']), 3)
-        checked = self.client.post('/api/unlock', json={'password': '0012', 'operationId': operation}).json
+        checked = self.client.post('/api/unlock', json={'password': '123456', 'operationId': operation}).json
         self.assertTrue(checked['saved'])
         self.assertNotIn('coupon', checked)
         self.assertEqual(self.unlock()['coupon']['number'], '002234')
@@ -76,7 +76,7 @@ class AppTests(unittest.TestCase):
         self.change(type='edited', couponId=old['coupon']['id'], number='001234', password='changed')
         self.assertEqual(self.client.post('/api/use', json={'operationId': str(uuid.uuid4())}, headers={'Authorization': 'Bearer ' + old['token']}).status_code, 409)
         current = self.unlock()
-        self.change(type='password_changed', role='access', password='0099')
+        self.change(type='password_changed', role='access', password='000099')
         self.assertEqual(self.client.post('/api/use', json={'operationId': str(uuid.uuid4())}, headers={'Authorization': 'Bearer ' + current['token']}).status_code, 401)
 
     def test_write_failure_and_corruption_do_not_overwrite(self):
@@ -91,7 +91,7 @@ class AppTests(unittest.TestCase):
     def test_concurrent_writes(self):
         def add_one(i):
             c = self.app.test_client()
-            login = c.post('/api/admin/login', json={'password': 'admin-test-123'})
+            login = c.post('/api/admin/login', json={'password': 'admin'})
             return c.post('/api/admin/change', json={'operationId': str(uuid.uuid4()), 'type': 'added', 'rows': [{'number': str(i), 'password': '00'}]}, headers={'X-CSRF-Token': login.json['csrf']}).status_code
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             self.assertEqual(list(pool.map(add_one, range(8))), [200]*8)
@@ -101,12 +101,21 @@ class AppTests(unittest.TestCase):
         self.assertTrue(self.unlock()['empty'])
         self.add()
         restarted = create_app({'DATA_FILE': str(self.path), 'COOKIE_SECURE': False}).test_client()
-        self.assertEqual(restarted.post('/api/unlock', json={'password': '0012'}).json['coupon']['number'], '001234')
+        self.assertEqual(restarted.post('/api/unlock', json={'password': '123456'}).json['coupon']['number'], '001234')
+
+    def test_six_digit_password_and_defaults(self):
+        self.assertEqual(self.client.post('/api/unlock', json={'password': '123456'}).status_code, 200)
+        for invalid in ['12345', '1234567', 'abcdef', '１２３４５６']:
+            self.assertEqual(self.change(type='password_changed', role='access', password=invalid).status_code, 400)
+        self.assertEqual(self.change(type='password_changed', role='access', password='000001').status_code, 200)
+        restarted = create_app({'DATA_FILE': str(self.path), 'COOKIE_SECURE': False}).test_client()
+        self.assertEqual(restarted.post('/api/unlock', json={'password': '000001'}).status_code, 200)
+        self.assertEqual(restarted.post('/api/unlock', json={'password': '123456'}).status_code, 401)
 
     def test_rate_limit(self):
         for _ in range(10):
             self.client.post('/api/unlock', json={'password': 'wrong'})
-        self.assertEqual(self.client.post('/api/unlock', json={'password': '0012'}).status_code, 429)
+        self.assertEqual(self.client.post('/api/unlock', json={'password': '123456'}).status_code, 429)
 
 
 if __name__ == '__main__':

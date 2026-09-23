@@ -86,8 +86,6 @@ def write_data(path, data):
 def create_app(config=None):
     app = Flask(__name__)
     app.config.update(DATA_FILE=os.getenv('DATA_FILE', 'data/data.json'),
-                      INITIAL_ACCESS_PASSWORD=os.getenv('INITIAL_ACCESS_PASSWORD', ''),
-                      INITIAL_ADMIN_PASSWORD=os.getenv('INITIAL_ADMIN_PASSWORD', ''),
                       COOKIE_SECURE=os.getenv('COOKIE_SECURE', 'true').lower() == 'true',
                       MAX_CONTENT_LENGTH=256 * 1024)
     if config:
@@ -95,9 +93,7 @@ def create_app(config=None):
     path = Path(app.config['DATA_FILE'])
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
-        access, admin = app.config['INITIAL_ACCESS_PASSWORD'], app.config['INITIAL_ADMIN_PASSWORD']
-        if not isinstance(access, str) or not re.fullmatch(r'[0-9]{1,32}', access) or not text(admin, 128) or len(admin) < 8:
-            raise RuntimeError('首次启动请设置数字 INITIAL_ACCESS_PASSWORD 和至少8位 INITIAL_ADMIN_PASSWORD。')
+        access, admin = '123456', 'admin'
         write_data(path, {'schemaVersion': 1, 'settings': {'accessPasswordHash': generate_password_hash(access), 'adminPasswordHash': generate_password_hash(admin)}, 'coupons': [], 'events': [], 'updatedAt': now()})
     read_data(path)
     # Probe writability without touching the existing data file.
@@ -312,8 +308,8 @@ def create_app(config=None):
                 role, password = b.get('role'), b.get('password')
                 if role not in ('access', 'admin') or not text(password, 128):
                     raise Problem('密码格式错误。')
-                if role == 'access' and not re.fullmatch(r'[0-9]{1,32}', password):
-                    raise Problem('老人密码需要1至32位数字。')
+                if role == 'access' and not re.fullmatch(r'[0-9]{6}', password):
+                    raise Problem('老人密码必须是6位数字。')
                 if role == 'admin' and len(password) < 8:
                     raise Problem('管理员密码至少8位。')
                 d['settings'][role + 'PasswordHash'] = generate_password_hash(password)

@@ -6,15 +6,14 @@
 
 ## Docker Compose 部署
 
-1. 复制配置文件：`cp .env.example .env`。
-2. 在 `.env` 填写 `INITIAL_ACCESS_PASSWORD`（1–32位数字）和 `INITIAL_ADMIN_PASSWORD`（至少8位）。请不要提交 `.env`。
-3. 执行 `docker compose up -d --build`。
-4. 用服务器上的反向代理将 HTTPS 域名转发到 `http://127.0.0.1:8080`，应用部署在域名根路径。
-5. 电脑访问域名，点击“管理”添加券；手机访问同一地址即可使用。手机管理入口为 `/?view=admin`。
+1. 执行 `docker compose up -d --build`，不需要 `.env` 文件。
+2. 用服务器上的反向代理将 HTTPS 域名转发到 `http://127.0.0.1:8080`，应用部署在域名根路径。
+3. 首次初始化：老人密码（ACCESS_PASSWORD）为 **123456**，管理员密码（ADMIN_PASSWORD）为 **admin**。
+4. 电脑点击“管理”，用 `admin` 登录后在“密码设置”修改密码并添加券。手机管理入口为 `/?view=admin`。
 
-`COOKIE_SECURE=true` 用于 HTTPS 部署。仅本机 HTTP 调试时改为 `false`。`PORT` 可以修改宿主机端口。若反向代理本身在另一个容器中，需要自行调整 Docker 网络连接，不能把其容器内的 `127.0.0.1` 当作宿主机。
+老人密码必须为6位数字，支持前导零；修改后的管理员密码至少8位。默认密码仅在 `data/data.json` 不存在时使用，重启不会覆盖已有密码和券码。已有非六位老人密码需要先在管理界面修改为六位。
 
-初始化后，密码哈希和券码存于 `./data/data.json`。可移除 `.env` 中两个初始化密码，已有 JSON 不会被启动配置覆盖。数据丢失时若未提供初始化密码，应用会拒绝启动，不自动创建空券池。
+端口和 `COOKIE_SECURE` 直接在 `compose.yaml` 修改。默认 `COOKIE_SECURE: "true"` 用于 HTTPS；仅本机 HTTP 调试时改为 `"false"`。若反向代理在另一个容器中，需要调整 Docker 网络连接。
 
 数据目录必须可写。定期备份 `data`；重建容器不会清空挂载的数据。修复 JSON 前先停服务并备份，不在运行时手动编辑。
 
@@ -23,7 +22,7 @@
 ## 手机使用
 
 - iPhone Safari 打开 HTTPS 地址，分享 → 添加到主屏幕。
-- 输入老人密码，展示第一张未使用券。
+- 使用锁屏式大号数字键盘输入6位老人密码，满6位自动验证；删除键可退回一位，输错后清空重输。
 - 按住按钮满3秒标记使用；短按、移出按钮和切后台都取消。
 - 用完一张后重新输入密码，才能查看下一张；后台返回和刷新也要重新输入。
 - 网络结果不明确时只核实原操作，不直接展示下一张。
@@ -45,11 +44,11 @@ pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-本地运行前设置 `INITIAL_ACCESS_PASSWORD`、`INITIAL_ADMIN_PASSWORD`、`COOKIE_SECURE=false` 环境变量，然后 `python app.py`，访问 `http://127.0.0.1:8080`。本地运行不会自动加载 `.env`；Compose 会读取它。
+本地运行前设置 `COOKIE_SECURE=false`，然后 `python app.py`，访问 `http://127.0.0.1:8080`。首次启动自动使用默认密码，无需密码环境变量。
 
 可选浏览器验收：安装或使用已有 Playwright，在一个终端运行 `python -m tests.serve_browser`，另一个依次运行 `node tests/browser.cjs`、`node tests/network.cjs`。第二个脚本继续使用第一个脚本留下的测试券池；重新执行全套测试时重启测试服务。可用 `PLAYWRIGHT_MODULE` 指向现有 Playwright 模块，`PLAYWRIGHT_EXECUTABLE_PATH` 指向现有 Chromium。测试服务使用临时 JSON，不接触生产数据；截图输出到忽略提交的 `test-results/`。这只是测试工具，不是应用运行依赖。
 
-已在本地通过8项后端测试，以及 Chromium 的7种手机视口和网络异常验收。Docker 镜像构建及真实 iPhone 桌面模式尚需在对应环境验证。
+已在本地通过9项后端测试，以及 Chromium 的7种手机视口和网络异常验收。Docker 镜像构建及真实 iPhone 桌面模式尚需在对应环境验证。
 
 ## 文件
 

@@ -3,11 +3,9 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${PORT:-8080}:8000"
+      - "127.0.0.1:8080:8000"
     environment:
-      INITIAL_ACCESS_PASSWORD: ${INITIAL_ACCESS_PASSWORD:-}
-      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
-      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SECURE: "true"
     volumes:
       - ./data:/app/data
     healthcheck:
