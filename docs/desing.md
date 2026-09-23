@@ -215,11 +215,11 @@ family-coupons/
 ## 8. Docker Compose 部署
 
 - Flask 作为应用框架，由生产 WSGI 服务以一个工作进程运行，不用 Flask 开发服务器部署。
-- `./data` 挂载到容器 `/app/data`，容器重建不丢数据。
+- 项目当前目录 `.` 整体挂载到容器 `/app`，数据保存在宿主机 `data/data.json`，容器重建不丢数据。镜像只安装依赖，不复制项目文件。
 - 不使用 `.env`。首次初始化采用老人密码 `123456`、管理员密码 `admin`，以哈希保存到 JSON，后续从管理界面修改。已有数据不会被默认值覆盖。
 - 容器配置自动重启和健康检查；健康检查只返回运行状态，不泄露券码。
 - 默认端口绑定服务器回环地址，由现有反向代理提供 HTTPS。通过手机访问代理域名。
-- `docker compose up -d --build` 完成构建启动。
+- 首次用 `docker compose up -d --build` 构建启动；普通代码更新用 `docker compose stop` → `git pull --ff-only` → `docker compose start`。依赖或 Dockerfile 变化时重新构建，Compose 配置变化时用 `up -d` 应用。
 
 文件损坏或目录不可写时启动失败，不覆盖原数据；只有数据文件不存在时才使用默认密码初始化。
 

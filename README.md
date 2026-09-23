@@ -19,6 +19,24 @@
 
 **固定使用一个容器、一个 Gunicorn worker。** 线程之间的读改写由锁串行化，不能增加副本或工作进程。JSON 先写同目录临时文件、刷盘再替换，写入失败不报告成功。
 
+## 更新代码
+
+镜像只安装 Python 依赖，不复制项目文件。Compose 将当前项目目录整体挂载到容器 `/app`，券码数据仍在宿主机项目的 `data/data.json`。
+
+首次切换到这个挂载配置时，执行一次 `docker compose up -d --build --force-recreate`，让现有容器采用新挂载。以后只修改 Python、模板或文档时：
+
+```sh
+docker compose stop
+git pull --ff-only
+docker compose start
+```
+
+`start` 会重新启动 Python 进程，读取挂载目录中的最新代码。不要在更新代码时删除 `data` 目录。
+
+如果更新涉及 `requirements.txt` 或 `Dockerfile`，执行 `docker compose up -d --build` 重新构建并创建容器；如果只修改 `compose.yaml`，执行 `docker compose up -d` 应用配置。`stop/start` 不会重新安装依赖或应用容器配置变化。
+
+构建使用 Docker BuildKit 临时挂载 `requirements.txt` 安装依赖，Dockerfile 中没有 `COPY` 指令。需要支持 BuildKit 的 Docker 与 Compose v2。
+
 ## 手机使用
 
 - iPhone Safari 打开 HTTPS 地址，分享 → 添加到主屏幕。
