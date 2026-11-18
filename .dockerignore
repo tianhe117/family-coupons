@@ -1,8 +1,5 @@
-.env
-.venv
-.deps
-data
-tests
-test-results
-__pycache__
-.git
+# Only dependency metadata is needed to build the image.
+**
+!Dockerfile
+!requirements.txt
+!.dockerignore

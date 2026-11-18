@@ -6,70 +6,36 @@
 
 ## Docker Compose 部署
 
-服务器需已安装 Git、Docker 和 Docker Compose v2。以下命令在服务器终端执行，不需要 `.env` 文件。
+服务器需安装 Git、Docker 和 Docker Compose 2.24.4 或更新版本（本地覆盖配置使用 `!override`）。以下命令从项目目录执行，无需 `.env` 文件。
 
 ### 首次部署
 
 ```sh
 git clone https://github.com/tianhe117/family-coupons.git
 cd family-coupons
-docker compose up -d --build
-
-# 查看容器状态和启动日志
+docker compose up -d --build coupons
 docker compose ps
 docker compose logs --tail=100 coupons
-
-# 在服务器本机检查服务
 curl --fail http://127.0.0.1:8000/health
 ```
 
-健康检查正常返回 `{"ok":true}`。默认端口映射为 `8000:8000`，监听宿主机所有网卡；网络及防火墙允许时，可通过服务器 IP 的8000端口访问。镜像名称固定为 `family-coupons:local`，由本项目 Dockerfile 构建。HTTPS 域名可通过现有反向代理转发到 `http://127.0.0.1:8000`，应用部署在域名根路径。
+健康检查正常返回 `{"ok":true}`。默认端口映射为 `8000:8000`，不指定宿主机 IP，对所有网卡开放。网络及防火墙允许时，可通过服务器 IP 的8000端口访问。通过现有 HTTPS 反向代理转发到 `http://127.0.0.1:8000`，应用部署在域名根路径；代理在另一个容器中时需调整 Docker 网络连接。
 
-首次初始化：老人密码（ACCESS_PASSWORD）为 **123456**，管理员密码（ADMIN_PASSWORD）为 **admin**。电脑访问域名后点击“管理”，用 `admin` 登录，在“密码设置”修改密码并添加券。手机管理入口为 `/?view=admin`。
+镜像为 `family-coupons:1.0`，容器名为 `family-coupons`。镜像基于 `python:3.12-slim`，只复制并安装 `requirements.txt`，依赖安装在挂载目录之外。`.dockerignore` 仅允许构建必需文件进入上下文。Compose 将宿主项目目录挂载到 `/app`，Gunicorn 监听 `0.0.0.0:8000`。
 
-### 常用管理命令
+首次初始化：老人密码为 **123456**，管理员密码为 **admin**。电脑访问域名后点击“管理”，用 `admin` 登录，在“密码设置”修改密码并添加券。手机管理入口为 `/?view=admin`。老人密码必须为6位数字，支持前导零；修改后的管理员密码至少8位。
 
-以下命令均在 `family-coupons` 项目目录内执行：
-
-```sh
-# 停止 / 启动已有容器
-docker compose stop
-docker compose start
-
-# 重启服务
-docker compose restart
-
-# 查看状态
-docker compose ps
-
-# 持续查看日志，Ctrl+C 退出查看，不会停止服务
-docker compose logs -f --tail=100 coupons
-```
-
-老人密码必须为6位数字，支持前导零；修改后的管理员密码至少8位。默认密码仅在 `data/data.json` 不存在时使用，重启不会覆盖已有密码和券码。已有非六位老人密码需要先在管理界面修改为六位。
-
-端口等服务器专用设置放在下文的 `compose.override.yaml` 中，不必修改受 Git 管理的文件。默认 `COOKIE_SECURE: "true"` 用于 HTTPS；如果直接通过 HTTP 访问，需要在本机覆盖为 `"false"`，否则管理员登录 Cookie 无法正常使用。若反向代理在另一个容器中，需要调整 Docker 网络连接。
-
-数据目录必须可写。定期备份 `data`；重建容器不会清空挂载的数据。修复 JSON 前先停服务并备份，不在运行时手动编辑。
+默认密码仅在 `data/data.json` 不存在时使用，重启不会覆盖已有密码和券码。已有非六位老人密码需要先在管理界面修改为六位。数据保存在宿主项目的 `data/data.json`，目录必须可写，重建容器不会清空数据。定期备份 `data`；修复 JSON 前先停服务并备份，不在运行时手动编辑。
 
 **固定使用一个容器、一个 Gunicorn worker。** 线程之间的读改写由锁串行化，不能增加副本或工作进程。JSON 先写同目录临时文件、刷盘再替换，写入失败不报告成功。
 
-## 服务器本地配置：compose.override.yaml
+### 服务器本地配置
 
-在 `compose.yaml` 同目录创建 `compose.override.yaml`。不额外指定 `-f` 时，Docker Compose 自动加载这两个文件。覆盖文件已加入 `.gitignore`，服务器端口等设置不会被提交，后续 `git pull` 不会覆盖它。
-
-例如将宿主机端口改为9090：
-
-```yaml
-services:
-  coupons:
-    ports: !override
-      - "9090:8000"
+```sh
+cp compose.override.example.yaml compose.override.yaml
 ```
 
-**`!override` 需要 Docker Compose 2.24.4 或更新版本。** 它会替换整个端口列表；如果只写普通 `ports` 列表，默认8000可能和9090一起保留。可用 `docker compose version` 查看版本。参考 [Docker 官方合并规则](https://docs.docker.com/reference/compose-file/merge/#replace-value)。
-
-如果通过 HTTP 而非 HTTPS 直接访问，可以在同一个文件中增加：
+按需修改 `compose.override.yaml`；示例将宿主机端口改为9090，同样对所有网卡开放。该文件已加入 `.gitignore`，不会随 `git pull` 被覆盖。不额外指定 `-f` 时 Compose 自动加载它。
 
 ```yaml
 services:
@@ -77,61 +43,61 @@ services:
     ports: !override
       - "9090:8000"
     environment:
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: "true"
 ```
 
-保存后，在项目目录检查最终配置并应用：
+`!override` 替换整个端口列表，避免默认8000与9090合并保留。默认 `COOKIE_SECURE: "true"` 用于 HTTPS。需要通过服务器 IP 直接以 HTTP 访问时，将 `COOKIE_SECURE` 改为 `"false"`，否则管理员登录 Cookie 无法正常使用；确保网络及防火墙允许访问。
 
 ```sh
+# 校验共享配置和示例配置
+docker compose -f compose.yaml config --quiet
+docker compose -f compose.yaml -f compose.override.example.yaml config --quiet
+
+# 检查实际本地配置并应用
 docker compose config
-docker compose up -d --build
+docker compose up -d coupons
 ```
 
-检查输出中的 `ports` 应只有9090到8000的映射。镜像已构建且依赖没变时，用 `docker compose up -d` 即可。改完配置需要 `up -d` 重建容器，单独 `stop/start` 不会应用新端口。健康检查命令也相应改为 `curl --fail http://127.0.0.1:9090/health`。
+使用示例配置后，端口应只有9090到8000的映射，健康检查改为 `curl --fail http://127.0.0.1:9090/health`。只改端口或其他 Compose 配置时使用 `up -d coupons`，无需重建镜像；`restart` 不会应用新配置。
 
-若希望只供服务器本机反向代理访问，可把覆盖文件里的端口写成 `"127.0.0.1:9090:8000"`。
+### 更新代码
 
-## 更新代码
-
-镜像只安装 Python 依赖，不复制项目文件。Compose 将当前项目目录整体挂载到容器 `/app`，券码数据仍在宿主机项目的 `data/data.json`。
-
-### 普通代码更新
-
-只修改 Python、模板或文档时，在项目目录执行：
+仅修改 Python、模板或文档时：
 
 ```sh
-docker compose stop
 git pull --ff-only
-docker compose start
+docker compose restart coupons
 ```
 
-`start` 会重新启动 Python 进程，读取挂载目录中的最新代码。不要在更新代码时删除 `data` 目录。
+拉取后文件立即映射进容器，重启让 Python 进程加载最新代码，无需重建镜像。不要删除 `data` 目录。
 
-### 依赖或 Dockerfile 更新
+修改依赖、基础镜像或 Dockerfile 后：
 
 ```sh
-docker compose stop
 git pull --ff-only
-docker compose up -d --build
+docker compose up -d --build coupons
 ```
 
-### Compose 配置更新
+只修改 Compose 配置后：
 
 ```sh
-docker compose stop
 git pull --ff-only
-docker compose up -d
+docker compose up -d coupons
 ```
 
-`stop/start` 不会重新安装依赖或应用容器配置变化。首次从旧部署切换到目录挂载时，拉取代码后执行：
+从旧部署升级时，在原项目目录运行 `docker compose up -d --build coupons`，服务键仍为 `coupons`。新容器名固定为 `family-coupons`，升级前用 `docker ps -a` 确认没有其他项目占用该名称，并检查宿主机8000端口是否被其他容器占用。已有本地覆盖文件会继续生效，请检查最终端口绑定。重建保留宿主机 `data` 目录。
+
+### 常用管理命令
 
 ```sh
-docker compose up -d --build --force-recreate
+docker compose stop coupons
+docker compose start coupons
+docker compose restart coupons
+docker compose ps
+docker compose logs -f --tail=100 coupons
 ```
 
-上述重建操作保留宿主机 `data` 目录中的数据。
-
-构建使用 Docker BuildKit 临时挂载 `requirements.txt` 安装依赖，Dockerfile 中没有 `COPY` 指令。需要支持 BuildKit 的 Docker 与 Compose v2。
+日志查看时按 Ctrl+C 退出，不会停止服务。
 
 ## 手机使用
 

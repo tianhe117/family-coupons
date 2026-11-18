@@ -1,12 +1,14 @@
 services:
   coupons:
-    image: family-coupons:local
+    image: family-coupons:1.0
+    container_name: family-coupons
     build: .
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       COOKIE_SECURE: "true"
+      TZ: Asia/Shanghai
     volumes:
       - .:/app
     healthcheck:

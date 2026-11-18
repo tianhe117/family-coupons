@@ -1,0 +1,9 @@
+# Copy to compose.override.yaml and customize locally.
+# Requires Docker Compose >= 2.24.4 for !override.
+services:
+  coupons:
+    ports: !override
+      - "9090:8000"
+    environment:
+      # Set to "false" only when accessing the app over HTTP.
+      COOKIE_SECURE: "true"
